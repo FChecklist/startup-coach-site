@@ -1,0 +1,57 @@
+// Starts a payment: validates the booking details and asks Razorpay (the account of IT Services by Rajat Agarwal) for an Order.
+// The price is decided HERE, never by the browser. The browser opens Razorpay's window inside the registered website's pay frame (HOP_URL),
+// then sends the signed result to /api/verify. Nothing is stored: the buyer's details travel in the Razorpay order notes.
+const PRICE_INR = 19999; // per startup, GST not charged (IT Services by Rajat Agarwal is not GST registered)
+const MAX_STARTUPS = 5;
+const HOP_URL = "https://itservices-rajat-agarwal.pages.dev/payframe/";
+const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
+const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+const rand = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => b.toString(16).padStart(2, "0")).join("");
+const clean = (v, max) => (typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max) : "");
+// Indian payers see UPI first (on a phone this opens their UPI app); cards, net banking and wallets stay one tap away.
+const UPI_FIRST = { display: { blocks: { upi: { name: "Pay with UPI", instruments: [{ method: "upi" }] }, other: { name: "Cards, net banking, wallets", instruments: [{ method: "card" }, { method: "netbanking" }, { method: "wallet" }] } }, sequence: ["block.upi", "block.other"], preferences: { show_default_blocks: false } } };
+
+export async function onRequestPost({ request, env }) {
+  const url = new URL(request.url);
+  const origin = request.headers.get("origin");
+  if (origin && origin !== url.origin) return json({ error: "Not allowed." }, 403);
+  if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) return json({ error: "Online payment is being switched on. Please call or WhatsApp +91 96503 97480 to book your seat.", off: true }, 503);
+  const raw = await request.text();
+  if (raw.length > 4096) return json({ error: "Request too large." }, 413);
+  let b; try { b = JSON.parse(raw); } catch { return json({ error: "Bad request." }, 400); }
+  if (!b || typeof b !== "object") return json({ error: "Bad request." }, 400);
+  if (b.website) return json({ error: "Not allowed." }, 400); // honeypot: real people never fill this field
+  const name = clean(b.name, 80), startup = clean(b.startup, 100), email = clean(b.email, 120).toLowerCase();
+  const digits = String(b.phone ?? "").replace(/\D/g, "").replace(/^(91|0)+(?=\d{10}$)/, "");
+  const qty = Number(b.qty ?? 1);
+  if (name.length < 2) return json({ error: "Please enter your name." }, 400);
+  if (startup.length < 2) return json({ error: "Please enter your startup's name." }, 400);
+  if (!EMAIL.test(email)) return json({ error: "Please enter a valid e-mail address." }, 400);
+  if (!/^[6-9]\d{9}$/.test(digits)) return json({ error: "Please enter a valid 10-digit Indian mobile number." }, 400);
+  if (!Number.isInteger(qty) || qty < 1 || qty > MAX_STARTUPS) return json({ error: `You can book 1 to ${MAX_STARTUPS} startups at a time.` }, 400);
+  const total = PRICE_INR * qty;
+  const receipt = "sc_" + rand(8);
+  const notes = { product: "Startup coaching program (12 steps)", brand: "Rajat Agarwal, Startup Coach", startup, name, email, mobile: "+91" + digits, startups: String(qty), per_startup_inr: String(PRICE_INR) };
+  let order;
+  try {
+    const r = await fetch((env.RAZORPAY_BASE_URL || "https://api.razorpay.com") + "/v1/orders", {
+      method: "POST",
+      headers: { authorization: "Basic " + btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`), "content-type": "application/json" },
+      body: JSON.stringify({ amount: total * 100, currency: "INR", receipt, notes }),
+    });
+    order = await r.json();
+    if (!r.ok || !order?.id) return json({ error: "The payment service could not start your payment. Please try again, or call +91 96503 97480." }, 502);
+  } catch {
+    return json({ error: "The payment service is not reachable right now. Please try again in a minute." }, 502);
+  }
+  return json({
+    hop: env.HOP_URL || HOP_URL,
+    razorpay: {
+      keyId: env.RAZORPAY_KEY_ID, orderId: order.id, amount: total * 100, currency: "INR",
+      name: "Rajat Agarwal, Startup Coach", description: "Startup coaching program | IT Services by Rajat Agarwal",
+      prefill: { name, email, contact: "+91" + digits }, notes: { startup, startups: String(qty) }, theme: { color: "#F5820A" }, config: UPI_FIRST,
+    },
+    total,
+  });
+}
+export const onRequest = () => json({ error: "Not found." }, 404);

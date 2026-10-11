@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Sitemap: https://rajat-agarwal-startup-coach.pages.dev/sitemap.xml
