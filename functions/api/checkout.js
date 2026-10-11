@@ -31,7 +31,7 @@ export async function onRequestPost({ request, env }) {
   if (!Number.isInteger(qty) || qty < 1 || qty > MAX_STARTUPS) return json({ error: `You can book 1 to ${MAX_STARTUPS} startups at a time.` }, 400);
   const total = PRICE_INR * qty;
   const receipt = "sc_" + rand(8);
-  const notes = { product: "Startup coaching program (12 steps)", brand: "Rajat Agarwal, Startup Coach", startup, name, email, mobile: "+91" + digits, startups: String(qty), per_startup_inr: String(PRICE_INR) };
+  const notes = { product: "startup_coach", variation: `startups_${qty}`, title: "Startup coaching program (12 steps)", brand: "Rajat Agarwal, Startup Coach", startup, name, email, mobile: "+91" + digits, startups: String(qty), per_startup_inr: String(PRICE_INR) };
   let order;
   try {
     const r = await fetch((env.RAZORPAY_BASE_URL || "https://api.razorpay.com") + "/v1/orders", {
