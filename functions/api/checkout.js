@@ -11,6 +11,21 @@ const clean = (v, max) => (typeof v === "string" ? v.replace(/[\u0000-\u001f\u00
 // Indian payers see UPI first (on a phone this opens their UPI app); cards, net banking and wallets stay one tap away.
 const UPI_FIRST = { display: { blocks: { upi: { name: "Pay with UPI", instruments: [{ method: "upi" }] }, other: { name: "Cards, net banking, wallets", instruments: [{ method: "card" }, { method: "netbanking" }, { method: "wallet" }] } }, sequence: ["block.upi", "block.other"], preferences: { show_default_blocks: false } } };
 
+// Central payments (owner order 2026-10-12): the order is opened through IT Services by Rajat Agarwal so it lands in the ONE Razorpay ledger as
+// razorpay / IT Services / rajat-agarwal-startup-coach / sales / startups_N. Without PAY_SERVICE_KEY, or if the central service cannot be reached, it is opened directly as before.
+const SITE = "rajat-agarwal-startup-coach.pages.dev";
+async function centralOrder(env, o) {
+  if (!env.PAY_SERVICE_KEY) return null;
+  try {
+    const r = await fetch((env.PAY_SERVICE_URL || "https://itservices-rajat-agarwal.pages.dev").replace(/\/+$/, "") + "/api/pay/order", {
+      method: "POST", headers: { "content-type": "application/json", "x-site-key": env.PAY_SERVICE_KEY }, signal: AbortSignal.timeout(6000),
+      body: JSON.stringify({ site: SITE, product: "startup_coach", plan: o.plan, amount_minor: o.amount, currency: "INR", payment_ref: o.receipt, payer_email: o.email, payer_phone: o.phone, extra_notes: o.notes }),
+    });
+    const d = await r.json().catch(() => ({}));
+    return r.ok && d.orderId ? { id: d.orderId } : null;
+  } catch { return null; }
+}
+
 export async function onRequestPost({ request, env }) {
   const url = new URL(request.url);
   const origin = request.headers.get("origin");
@@ -31,16 +46,16 @@ export async function onRequestPost({ request, env }) {
   if (!Number.isInteger(qty) || qty < 1 || qty > MAX_STARTUPS) return json({ error: `You can book 1 to ${MAX_STARTUPS} startups at a time.` }, 400);
   const total = PRICE_INR * qty;
   const receipt = "sc_" + rand(8);
-  const notes = { product: "startup_coach", variation: `startups_${qty}`, title: "Startup coaching program (12 steps)", brand: "Rajat Agarwal, Startup Coach", startup, name, email, mobile: "+91" + digits, startups: String(qty), per_startup_inr: String(PRICE_INR) };
-  let order;
+  const notes = { product: "startup_coach", variation: `startups_${qty}`, plan: `startups_${qty}`, site: SITE, stream: "sales", title: "Startup coaching program (12 steps)", brand: "Rajat Agarwal, Startup Coach", startup, name, email, mobile: "+91" + digits, startups: String(qty), per_startup_inr: String(PRICE_INR) };
+  let order = await centralOrder(env, { plan: `startups_${qty}`, amount: total * 100, receipt, email, phone: "+91" + digits, notes: { ...notes, product: undefined, variation: undefined } });
   try {
-    const r = await fetch((env.RAZORPAY_BASE_URL || "https://api.razorpay.com") + "/v1/orders", {
+    if (!order) { const r = await fetch((env.RAZORPAY_BASE_URL || "https://api.razorpay.com") + "/v1/orders", {
       method: "POST",
       headers: { authorization: "Basic " + btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`), "content-type": "application/json" },
       body: JSON.stringify({ amount: total * 100, currency: "INR", receipt, notes }),
     });
     order = await r.json();
-    if (!r.ok || !order?.id) return json({ error: "The payment service could not start your payment. Please try again, or call +91 96503 97480." }, 502);
+    if (!r.ok || !order?.id) return json({ error: "The payment service could not start your payment. Please try again, or call +91 96503 97480." }, 502); }
   } catch {
     return json({ error: "The payment service is not reachable right now. Please try again in a minute." }, 502);
   }

@@ -107,3 +107,46 @@ describe("verify", () => {
     r = await verify({ request: req("/api/verify", {}, { origin: "https://evil.example" }), env }); expect(r.status).toBe(403); restore();
   });
 });
+
+describe("central payments (orders open through IT Services by Rajat Agarwal)", () => {
+  const cenv = { ...env, PAY_SERVICE_KEY: "psk_coach", PAY_SERVICE_URL: "https://central.test" };
+  let central, up;
+  beforeEach(() => {
+    central = { orders: [], verifies: [] }; up = true;
+    const inner = globalThis.fetch;
+    globalThis.fetch = async (url, init = {}) => {
+      const u = String(url);
+      if (u === "https://central.test/api/pay/order") {
+        if (!up) throw new Error("down");
+        const b = JSON.parse(init.body); central.orders.push({ key: init.headers["x-site-key"], ...b });
+        const id = "order_CEN" + central.orders.length + "abcdef"; orders[id] = { id, amount: b.amount_minor, currency: b.currency, notes: { ...b.extra_notes, product: b.product, variation: b.plan } };
+        return Response.json({ ok: true, orderId: id });
+      }
+      if (u === "https://central.test/api/pay/verify") { central.verifies.push({ key: init.headers["x-site-key"], ...JSON.parse(init.body) }); return Response.json({ ok: true }); }
+      return inner(url, init);
+    };
+  });
+  test("a booking is opened centrally: this website / sales / startups_N, with the buyer's details as notes", async () => {
+    const r = await checkout({ request: req("/api/checkout", { ...good, qty: 2 }), env: cenv }); restore();
+    const j = await r.json(); expect(r.status).toBe(200);
+    expect(central.orders).toHaveLength(1);
+    expect(central.orders[0]).toMatchObject({ key: "psk_coach", site: "rajat-agarwal-startup-coach.pages.dev", product: "startup_coach", plan: "startups_2", amount_minor: 3999800, currency: "INR" });
+    expect(central.orders[0].extra_notes).toMatchObject({ startup: "FreshCart", mobile: "+919876543210" });
+    expect(j.razorpay.orderId).toBe("order_CEN1abcdef");
+  });
+  test("if the central service is down the booking still works, opened directly with Razorpay", async () => {
+    up = false;
+    const r = await checkout({ request: req("/api/checkout", good), env: cenv }); restore();
+    expect(r.status).toBe(200); expect(central.orders).toHaveLength(0);
+    const o = Object.values(orders)[0]; expect(o.notes).toMatchObject({ site: "rajat-agarwal-startup-coach.pages.dev", stream: "sales", plan: "startups_1" });
+  });
+  test("a verified payment is reported to the central ledger", async () => {
+    const c = await (await checkout({ request: req("/api/checkout", good), env: cenv })).json();
+    const oid = c.razorpay.orderId, pid = "pay_CEN0000001";
+    payments[pid] = { id: pid, order_id: oid, amount: orders[oid].amount, currency: "INR", status: "captured" };
+    const r = await verify({ request: req("/api/verify", { razorpay_order_id: oid, razorpay_payment_id: pid, razorpay_signature: sig(oid, pid) }), env: cenv }); restore();
+    expect(r.status).toBe(200);
+    expect(central.verifies).toHaveLength(1);
+    expect(central.verifies[0]).toMatchObject({ key: "psk_coach", site: "rajat-agarwal-startup-coach.pages.dev", razorpay_order_id: oid, razorpay_payment_id: pid });
+  });
+});

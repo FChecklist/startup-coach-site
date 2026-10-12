@@ -26,6 +26,12 @@ async function mail(env, to, subject, text, html, key) {
   } catch { return false; }
 }
 
+// Tell the central ledger (IT Services) about a verified payment. Best effort: it never blocks or fails the buyer; the central webhook records it too.
+async function reportToCentral(env, orderId, payId, sig) {
+  if (!env.PAY_SERVICE_KEY) return;
+  try { await fetch((env.PAY_SERVICE_URL || "https://itservices-rajat-agarwal.pages.dev").replace(/\/+$/, "") + "/api/pay/verify", { method: "POST", headers: { "content-type": "application/json", "x-site-key": env.PAY_SERVICE_KEY }, signal: AbortSignal.timeout(4000), body: JSON.stringify({ site: "rajat-agarwal-startup-coach.pages.dev", razorpay_order_id: orderId, razorpay_payment_id: payId, razorpay_signature: sig }) }); } catch { /* the webhook records it */ }
+}
+
 export async function onRequestPost({ request, env }) {
   const url = new URL(request.url);
   const origin = request.headers.get("origin");
@@ -44,6 +50,7 @@ export async function onRequestPost({ request, env }) {
   if (pay.status === "created") return json({ confirming: true, message: "Confirming your payment..." }, 202);
   if (pay.status === "authorized") { try { await rzp(env, `/v1/payments/${payId}/capture`, { method: "POST", body: JSON.stringify({ amount: order.amount, currency: "INR" }) }); } catch { /* auto-capture or an earlier capture may have finished it */ } }
   else if (pay.status !== "captured") return json({ error: `The payment is ${pay.status}. Nothing was charged to your order.` }, 402);
+  await reportToCentral(env, orderId, payId, sig);
   const n = order.notes || {};
   const total = Math.round(Number(order.amount) / 100);
   const when = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }) + " IST";
