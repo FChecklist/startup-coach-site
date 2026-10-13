@@ -1,5 +1,8 @@
 // Confirms a payment. The browser only REPORTS the result; this function checks Razorpay's signature (HMAC with the account secret),
-// then asks Razorpay itself what happened (the order's own notes and amount, the payment's own status) before saying "paid" and sending e-mails.
+// then asks Razorpay itself what happened (the order's own amount, the payment's own status) before saying "paid" and sending e-mails.
+// Every confirmed try is also written to this website's own ledger (C, _ledgerc.js): the attempt (success or failure), the payment's fee, tax, method and bank
+// reference. The buyer's details come from that ledger row (the Razorpay order notes can lose some when the order is opened through the central service).
+import { later, markDirty, markPaid, paymentByOrder, pushSummaries, recordAttempt } from "./_ledgerc.js";
 const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 const enc = new TextEncoder();
 const hex = (buf) => Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
@@ -36,11 +39,12 @@ async function mail(env, to, subject, text, html, key) {
 
 // Tell the central ledger (IT Services) about a verified payment. Best effort: it never blocks or fails the buyer; the central webhook records it too.
 async function reportToCentral(env, orderId, payId, sig) {
-  if (!env.PAY_SERVICE_KEY) return;
-  try { await fetch((env.PAY_SERVICE_URL || "https://itservices-rajat-agarwal.pages.dev").replace(/\/+$/, "") + "/api/pay/verify", { method: "POST", headers: { "content-type": "application/json", "x-site-key": env.PAY_SERVICE_KEY }, signal: AbortSignal.timeout(4000), body: JSON.stringify({ site: "rajat-agarwal-startup-coach.pages.dev", razorpay_order_id: orderId, razorpay_payment_id: payId, razorpay_signature: sig }) }); } catch { /* the webhook records it */ }
+  if (!env.PAY_SERVICE_KEY) return null;
+  try { const r = await fetch((env.PAY_SERVICE_URL || "https://itservices-rajat-agarwal.pages.dev").replace(/\/+$/, "") + "/api/pay/verify", { method: "POST", headers: { "content-type": "application/json", "x-site-key": env.PAY_SERVICE_KEY }, signal: AbortSignal.timeout(4000), body: JSON.stringify({ site: "rajat-agarwal-startup-coach.pages.dev", razorpay_order_id: orderId, razorpay_payment_id: payId, razorpay_signature: sig }) }); return r.ok ? await r.json().catch(() => null) : null; } catch { return null; /* the webhook records it */ }
 }
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost(ctx) {
+  const { request, env } = ctx;
   const url = new URL(request.url);
   const origin = request.headers.get("origin");
   if (origin && origin !== url.origin) return json({ error: "Not allowed." }, 403);
@@ -55,11 +59,25 @@ export async function onRequestPost({ request, env }) {
   try { [order, pay] = await Promise.all([rzp(env, `/v1/orders/${orderId}`), rzp(env, `/v1/payments/${payId}`)]); }
   catch { return json({ error: "We could not reach the payment service to confirm. Your payment is safe; please check again in a minute." }, 502); }
   if (pay.order_id !== orderId || Number(pay.amount) !== Number(order.amount) || pay.currency !== "INR") return json({ error: "The payment details did not match the order." }, 400);
+  const db = env.DB, now = Date.now();
+  const row = db ? await paymentByOrder(db, orderId) : null; // this website's own record of the booking (ledger C)
+  if (row && Number(row.amount_minor) !== Number(order.amount)) return json({ error: "The payment details did not match the order." }, 400);
+  const note = async (ent, status) => { if (!db) return; try { await recordAttempt(db, ent, status, now, now, row?.id ?? null); await markDirty(db); } catch { /* a ledger line must never undo a paid booking */ } };
   if (pay.status === "created") return json({ confirming: true, message: "Confirming your payment..." }, 202);
-  if (pay.status === "authorized") { try { await rzp(env, `/v1/payments/${payId}/capture`, { method: "POST", body: JSON.stringify({ amount: order.amount, currency: "INR" }) }); } catch { /* auto-capture or an earlier capture may have finished it */ } }
-  else if (pay.status !== "captured") return json({ error: `The payment is ${pay.status}. Nothing was charged to your order.` }, 402);
-  await reportToCentral(env, orderId, payId, sig);
-  const n = order.notes || {};
+  if (pay.status === "authorized") {
+    try { pay = await rzp(env, `/v1/payments/${payId}/capture`, { method: "POST", body: JSON.stringify({ amount: order.amount, currency: "INR" }) }); }
+    catch { try { pay = await rzp(env, `/v1/payments/${payId}`); } catch { /* auto-capture or an earlier capture may have finished it */ } }
+  } else if (pay.status !== "captured") { if (pay.status === "failed") await note(pay, "failed"); await later(ctx, () => pushSummaries(env, Date.now())); return json({ error: `The payment is ${pay.status}. Nothing was charged to your order.` }, 402); }
+  const central = await reportToCentral(env, orderId, payId, sig);
+  if (db) {
+    try {
+      if (pay.status === "captured") { await recordAttempt(db, pay, "captured", now, now, row?.id ?? null); if (row) await markPaid(db, row.id, pay, central, now); }
+      else await recordAttempt(db, pay, "authorized", now, now, row?.id ?? null); // capture not confirmed yet: Razorpay's webhook completes it
+      await markDirty(db);
+    } catch { /* a ledger line must never undo a paid booking */ }
+    await later(ctx, () => pushSummaries(env, Date.now()));
+  }
+  const n = { ...(order.notes || {}), ...(row ? { startup: row.org, name: row.payer_name, email: row.payer_email, mobile: row.payer_phone, startups: String(row.startups) } : {}) };
   const total = Math.round(Number(order.amount) / 100);
   const when = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }) + " IST";
   const lines = [`Startup: ${n.startup}`, `Name: ${n.name}`, `E-mail: ${n.email}`, `Mobile: ${n.mobile}`, `Startups booked: ${n.startups}`, `Amount paid: ${rs(total)} (no GST charged)`, `Razorpay payment ID: ${payId}`, `Order ID: ${orderId}`, `Time: ${when}`];

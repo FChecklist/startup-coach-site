@@ -1,6 +1,8 @@
 // Starts a payment: validates the booking details and asks Razorpay (the account of IT Services by Rajat Agarwal) for an Order.
 // The price is decided HERE, never by the browser. The browser opens Razorpay's window inside the registered website's pay frame (HOP_URL),
-// then sends the signed result to /api/verify. Nothing is stored: the buyer's details travel in the Razorpay order notes.
+// then sends the signed result to /api/verify. The booking is written to this website's own ledger (C, see _ledgerc.js) the moment the buyer starts paying,
+// with its txn_id (COA-<payment id>); the same txn_id travels in the Razorpay order notes (A) and the central ledger (B).
+import { later, openPayment, attachOrder, voidPayment, pushSummaries, txnIdOf } from "./_ledgerc.js";
 const PRICE_INR = 19999; // per startup, GST not charged (IT Services by Rajat Agarwal is not GST registered)
 const MAX_STARTUPS = 5;
 const TERMS_VERSION = "2026-10-13";
@@ -29,7 +31,8 @@ async function centralOrder(env, o) {
   } catch { return null; }
 }
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost(ctx) {
+  const { request, env } = ctx;
   const url = new URL(request.url);
   const origin = request.headers.get("origin");
   if (origin && origin !== url.origin) return json({ error: "Not allowed." }, 403);
@@ -50,9 +53,15 @@ export async function onRequestPost({ request, env }) {
   if (!/^[6-9]\d{9}$/.test(digits)) return json({ error: "Please enter a valid 10-digit Indian mobile number." }, 400);
   if (!Number.isInteger(qty) || qty < 1 || qty > MAX_STARTUPS) return json({ error: `You can book 1 to ${MAX_STARTUPS} startups at a time.` }, 400);
   const total = PRICE_INR * qty;
-  const receipt = "sc_" + rand(8);
-  const notes = { consent: `K7|${TERMS_VERSION}|A|${await sha16(K7_A)}|${new Date().toISOString()}`, product: "startup_coach", variation: `startups_${qty}`, plan: `startups_${qty}`, site: SITE, stream: "sales", title: "Startup coaching program (12 steps)", brand: "Rajat Agarwal, Startup Coach", startup, name, email, mobile: "+91" + digits, startups: String(qty), per_startup_inr: String(PRICE_INR) };
-  let order = await centralOrder(env, { plan: `startups_${qty}`, amount: total * 100, receipt, email, phone: "+91" + digits, notes: { ...notes, product: undefined, variation: undefined } });
+  const payId = "sc_" + rand(8), receipt = payId, txn = txnIdOf(payId), now = Date.now(), plan = `startups_${qty}`;
+  // Razorpay allows 15 notes in all. Through the central service it adds site, stream, product, plan, variation, payment_ref and txn_id (7) and keeps only the first
+  // 9 of ours, so the buyer's details come first; the title and the unit price are the two it can lose.
+  const buyer = { consent: `K7|${TERMS_VERSION}|A|${await sha16(K7_A)}|${new Date().toISOString()}`, startup, startups: String(qty), name, email, mobile: "+91" + digits, brand: "Rajat Agarwal, Startup Coach" };
+  const extra = { ...buyer, title: "Startup coaching program (12 steps)", per_startup_inr: String(PRICE_INR) };
+  const notes = { product: "startup_coach", variation: plan, plan, site: SITE, stream: "sales", payment_ref: payId, txn_id: txn, ...buyer };
+  const db = env.DB; let ledger = false;
+  if (db) { try { await openPayment(db, { id: payId, amountMinor: total * 100, startups: qty, org: startup, name, email, phone: "+91" + digits }, now); ledger = true; } catch { /* the buyer is never stopped by the ledger */ } }
+  let order = await centralOrder(env, { plan, amount: total * 100, receipt, email, phone: "+91" + digits, notes: extra });
   try {
     if (!order) { const r = await fetch((env.RAZORPAY_BASE_URL || "https://api.razorpay.com") + "/v1/orders", {
       method: "POST",
@@ -60,10 +69,13 @@ export async function onRequestPost({ request, env }) {
       body: JSON.stringify({ amount: total * 100, currency: "INR", receipt, notes }),
     });
     order = await r.json();
-    if (!r.ok || !order?.id) return json({ error: "The payment service could not start your payment. Please try again, or call +91 96503 97480." }, 502); }
+    if (!r.ok || !order?.id) { if (ledger) await voidPayment(db, payId, Date.now()).catch(() => {}); return json({ error: "The payment service could not start your payment. Please try again, or call +91 96503 97480." }, 502); } }
   } catch {
+    if (ledger) await voidPayment(db, payId, Date.now()).catch(() => {});
     return json({ error: "The payment service is not reachable right now. Please try again in a minute." }, 502);
   }
+  if (ledger) { try { await attachOrder(db, payId, order.id, Date.now()); } catch { /* verify still finds the buyer's details in the order notes */ } }
+  if (db) await later(ctx, () => pushSummaries(env, Date.now())); // a change that waited inside the 30-minute window goes now
   return json({
     hop: env.HOP_URL || HOP_URL,
     razorpay: {
@@ -71,7 +83,7 @@ export async function onRequestPost({ request, env }) {
       name: "Rajat Agarwal, Startup Coach", description: "Startup coaching program | IT Services by Rajat Agarwal",
       prefill: { name, email, contact: "+91" + digits }, notes: { startup, startups: String(qty) }, theme: { color: "#F5820A" }, config: UPI_FIRST,
     },
-    total,
+    total, txnId: txn,
   });
 }
 export const onRequest = () => json({ error: "Not found." }, 404);

@@ -1,3 +1,9 @@
 ﻿name = "rajat-agarwal-startup-coach"
 pages_build_output_dir = "dist"
 compatibility_date = "2026-09-01"
+
+# Ledger C: this website's own payment ledger (migrations/0001_ledger_c.sql)
+[[d1_databases]]
+binding = "DB"
+database_name = "rajat-startup-coach-ledger"
+database_id = "928aaa57-1e30-4293-8a8d-4e98f9d8c6ed"
