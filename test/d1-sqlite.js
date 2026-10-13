@@ -1,10 +1,11 @@
-// Test stand-in for Cloudflare D1, backed by bun:sqlite, built from the REAL migration file (migrations/0001_ledger_c.sql). Same prepare/bind/run/all/first shape.
+// Test stand-in for Cloudflare D1, backed by bun:sqlite, built from the REAL migration files (migrations/*.sql, in order). Same prepare/bind/run/all/first shape.
 import { Database } from "bun:sqlite";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 export function makeD1() {
   const raw = new Database(":memory:");
-  raw.exec(readFileSync(join(import.meta.dir, "..", "migrations", "0001_ledger_c.sql"), "utf8"));
+  const dir = join(import.meta.dir, "..", "migrations");
+  for (const f of readdirSync(dir).filter((x) => x.endsWith(".sql")).sort()) raw.exec(readFileSync(join(dir, f), "utf8"));
   const stmt = (sql, vals = []) => ({
     bind: (...v) => stmt(sql, v),
     run: async () => { const r = raw.query(sql).run(...vals); return { meta: { changes: r.changes } }; },

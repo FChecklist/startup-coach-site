@@ -76,6 +76,20 @@ export async function markPaid(db, paymentId, ent, central, now) {
   return before?.status === "created";
 }
 
+// ---------------------------------------------------------------- confirmation e-mails: exactly once per payment (migration 0002; see _confirm.js)
+const MAIL_COLS = new Set(["mailed_ms", "owner_mailed_ms"]);
+/** Claims the right to send one of the payment's mails. Atomic: of any number of concurrent callers exactly one gets true. */
+export async function claimMail(db, paymentId, col, now) {
+  if (!MAIL_COLS.has(col)) throw new Error("unknown mail column");
+  const r = await db.prepare(`UPDATE payment SET ${col}=? WHERE id=? AND ${col} IS NULL`).bind(now, paymentId).run();
+  return Number(r?.meta?.changes) === 1;
+}
+/** Gives the claim back after a failed send (only the holder of that very claim can), so the mail can be tried again. */
+export async function releaseMail(db, paymentId, col, claim) {
+  if (!MAIL_COLS.has(col)) throw new Error("unknown mail column");
+  await db.prepare(`UPDATE payment SET ${col}=NULL WHERE id=? AND ${col}=?`).bind(paymentId, claim).run();
+}
+
 // ---------------------------------------------------------------- attempts (A -> C)
 /** Which attempt status a Razorpay event stands for; null for events that are not about a payment attempt. */
 export function attemptStatusOf(event) {

@@ -1,8 +1,11 @@
 // Razorpay's webhook for this website (A -> C). Razorpay calls the central service first; the central service records the payment in B and passes the message
 // on here with Razorpay's own signature. The signature is checked with this website's copy of the webhook secret (RAZORPAY_WEBHOOK_SECRET) before anything is read.
-// What it does: keeps every attempt (authorized, captured, failed, with the reason), marks the booking paid on a capture, keeps refunds. It never sends e-mails
-// (that stays with /api/verify, once per payment) and it never moves a status backwards. A repeated delivery (same x-razorpay-event-id, or the same message) is answered and ignored.
+// What it does: keeps every attempt (authorized, captured, failed, with the reason), marks the booking paid on a capture, keeps refunds, and on a capture sends the
+// buyer's and the owner's confirmation e-mails (the buyer may have closed the tab before /api/verify ran). The e-mails come from _confirm.js, shared with /api/verify:
+// exactly one set is ever sent per payment, whichever of the two arrives first. If the buyer's mail cannot be sent the claim is released and this answers 500, so Razorpay
+// delivers the message again. It never moves a status backwards. A repeated delivery (same x-razorpay-event-id, or the same message) is answered and ignored.
 import { attemptStatusOf, derivedEventKey, eventSeen, hmacHex, later, logWebhook, markDirty, markEventSeen, markPaid, paymentByOrder, pushSummaries, recordAttempt, recordRefund, same } from "./_ledgerc.js";
+import { sendConfirmation } from "./_confirm.js";
 const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 export async function onRequestPost(ctx) {
@@ -35,6 +38,15 @@ export async function onRequestPost(ctx) {
       await markDirty(db);
     } catch { return log(json({ error: "Could not record the payment." }, 500), "attempt failed", { ...seen, paymentId: row.id }); }
     if (status === "captured" && Number(ent.amount) !== Number(row.amount_minor)) return log(json({ ok: true, ignored: "amount mismatch" }), "attempt kept, not marked paid: amount mismatch", { ...seen, paymentId: row.id });
+    if (status === "captured") {
+      // The booking is paid: confirm it to the buyer and the owner (once per payment, shared with /api/verify). Only a booking that really is paid gets mails.
+      const paid = await paymentByOrder(db, orderId);
+      if (paid?.status === "paid") {
+        const c = await sendConfirmation(env, { db, row: paid, orderId, payId: String(ent.id), order: null, now });
+        if (c.buyerFailed) return log(json({ error: "Recorded, but the confirmation e-mail could not be sent yet." }, 500), "attempt recorded: captured; confirmation e-mail failed, claim released", { ...seen, paymentId: row.id }); // 500: Razorpay delivers again
+        return log(json({ ok: true, attempt: status, mailed: c.sent }), `attempt recorded: ${status}`, { ...seen, paymentId: row.id });
+      }
+    }
     return log(json({ ok: true, attempt: status }), `attempt recorded: ${status}`, { ...seen, paymentId: row.id });
   };
   const res = await answer();
