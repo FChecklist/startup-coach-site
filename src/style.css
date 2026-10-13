@@ -114,3 +114,5 @@ input,select{width:100%;font:inherit;padding:13px 14px;border:2px solid var(--li
 .fine{margin:8px 0 0;padding-left:20px}.fine li{margin:6px 0}
 .chk{display:flex;gap:10px;align-items:flex-start;font-size:14px;margin:12px 0}.chk input{margin-top:4px;width:auto}
 .small.light{opacity:.85;margin-top:14px}
+
+.legaldoc{max-width:46rem;padding:32px 16px 56px;line-height:1.65}.legaldoc h1{font-size:2rem;line-height:1.2;margin:0 0 .6rem}.legaldoc h2{font-size:1.2rem;margin:1.8em 0 .4em}.legaldoc p{margin:.5em 0}.legaldoc table{border-collapse:collapse;width:100%;min-width:34rem;font-size:.92rem}.legaldoc th,.legaldoc td{border:1px solid #cfd8e6;padding:8px 10px;text-align:left;vertical-align:top}.legaldoc th{background:#eef2f9}.tw{overflow-x:auto;margin:14px 0}

@@ -48,8 +48,8 @@
   }
   form.addEventListener("submit", async function (e) {
     e.preventDefault(); show("");
-    var f = new FormData(form), body = { name: f.get("name"), startup: f.get("startup"), email: f.get("email"), phone: f.get("phone"), qty: Number(f.get("qty")), website: f.get("website"), consent: !!f.get("consent") };
-    if (!body.consent) return show("Please tick the box to accept the privacy notice and the programme terms.");
+    var f = new FormData(form), body = { name: f.get("name"), startup: f.get("startup"), email: f.get("email"), phone: f.get("phone"), qty: Number(f.get("qty")), website: f.get("website"), consent: f.get("consent") ? { v: "2026-10-13", boxes: ["A"] } : null };
+    if (!body.consent) return show("Please tick the box to continue.");
     if (String(body.name).trim().length < 2) return show("Please enter your name.");
     if (String(body.startup).trim().length < 2) return show("Please enter your startup's name.");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(body.email).trim())) return show("Please enter a valid e-mail address.");

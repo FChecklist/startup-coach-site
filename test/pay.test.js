@@ -8,7 +8,7 @@ const SECRET = "test_secret_value";
 const env = { RAZORPAY_KEY_ID: "rzp_test_abc123", RAZORPAY_KEY_SECRET: SECRET, RESEND_API_KEY: "re_test", OWNER_EMAIL: "owner@example.com", ACCESS_SECRET: "shared-secret-xyz", APP_URL: "https://app.example" };
 const ORIGIN = "https://coach.example";
 const req = (path, body, headers = {}) => new Request(ORIGIN + path, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, ...headers }, body: typeof body === "string" ? body : JSON.stringify(body) });
-const good = { name: "Asha Rao", startup: "FreshCart", email: "Asha@Example.com", phone: "+91 98765 43210", qty: 1, consent: true };
+const good = { name: "Asha Rao", startup: "FreshCart", email: "Asha@Example.com", phone: "+91 98765 43210", qty: 1, consent: { v: "2026-10-13", boxes: ["A"] } };
 const sig = (o, p) => createHmac("sha256", SECRET).update(`${o}|${p}`).digest("hex");
 
 let orders, payments, sent, calls;
@@ -159,8 +159,11 @@ describe("access link (the key to the Proof Forge app)", () => {
     payments[payId] = { id: payId, order_id: orderId, amount: orders[orderId].amount, currency: "INR", status: "captured" };
     return { orderId, payId, res: await verify({ request: req("/api/verify", { razorpay_order_id: orderId, razorpay_payment_id: payId, razorpay_signature: sig(orderId, payId) }), env }) };
   }
-  test("checkout refuses a booking without consent to the privacy notice", async () => {
-    const r = await checkout({ request: req("/api/checkout", { ...good, consent: false }), env }); expect(r.status).toBe(400);
+  test("checkout refuses a booking without the ticked Terms box, or with an old version of the Terms", async () => {
+    for (const consent of [false, null, true, { v: "2026-10-13", boxes: [] }, { v: "2020-01-01", boxes: ["A"] }, { boxes: ["A"] }]) {
+      const r = await checkout({ request: req("/api/checkout", { ...good, consent }), env }); expect(r.status).toBe(400);
+      expect((await r.json()).code).toBe("consent-required");
+    }
   });
   test("a verified payment returns a link whose token the app can open, and e-mails it", async () => {
     const { payId, res } = await paid({ qty: 2 }); const j = await res.json();

@@ -3,6 +3,9 @@
 // then sends the signed result to /api/verify. Nothing is stored: the buyer's details travel in the Razorpay order notes.
 const PRICE_INR = 19999; // per startup, GST not charged (IT Services by Rajat Agarwal is not GST registered)
 const MAX_STARTUPS = 5;
+const TERMS_VERSION = "2026-10-13";
+const K7_A = "I agree to the Terms, the Privacy Policy and the Refund Policy linked here. I understand there is no promise of funding or results."; // the exact wording of the box the buyer ticked (CONSENT K7, box A)
+const sha16 = async (s) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))), (x) => x.toString(16).padStart(2, "0")).join("").slice(0, 16);
 const HOP_URL = "https://itservices-rajat-agarwal.pages.dev/payframe/";
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
 const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -11,7 +14,7 @@ const clean = (v, max) => (typeof v === "string" ? v.replace(/[\u0000-\u001f\u00
 // Indian payers see UPI first (on a phone this opens their UPI app); cards, net banking and wallets stay one tap away.
 const UPI_FIRST = { display: { blocks: { upi: { name: "Pay with UPI", instruments: [{ method: "upi" }] }, other: { name: "Cards, net banking, wallets", instruments: [{ method: "card" }, { method: "netbanking" }, { method: "wallet" }] } }, sequence: ["block.upi", "block.other"], preferences: { show_default_blocks: false } } };
 
-// Central payments (owner order 2026-10-12): the order is opened through IT Services by Rajat Agarwal so it lands in the ONE Razorpay ledger as
+// Central payments (2026-10-12): the order is opened through IT Services by Rajat Agarwal so it lands in the ONE Razorpay ledger as
 // razorpay / IT Services / rajat-agarwal-startup-coach / sales / startups_N. Without PAY_SERVICE_KEY, or if the central service cannot be reached, it is opened directly as before.
 const SITE = "rajat-agarwal-startup-coach.pages.dev";
 async function centralOrder(env, o) {
@@ -36,7 +39,8 @@ export async function onRequestPost({ request, env }) {
   let b; try { b = JSON.parse(raw); } catch { return json({ error: "Bad request." }, 400); }
   if (!b || typeof b !== "object") return json({ error: "Bad request." }, 400);
   if (b.website) return json({ error: "Not allowed." }, 400); // honeypot: real people never fill this field
-  if (b.consent !== true) return json({ error: "Please accept the privacy notice and the programme terms." }, 400);
+  const cs = b.consent; // the box must be ticked AND the request must carry the current version of the Terms
+  if (!cs || typeof cs !== "object" || cs.v !== TERMS_VERSION || !Array.isArray(cs.boxes) || !cs.boxes.includes("A")) return json({ error: "Please tick the box to continue.", code: "consent-required", kind: "K7", version: TERMS_VERSION }, 400);
   const name = clean(b.name, 80), startup = clean(b.startup, 100), email = clean(b.email, 120).toLowerCase();
   const digits = String(b.phone ?? "").replace(/\D/g, "").replace(/^(91|0)+(?=\d{10}$)/, "");
   const qty = Number(b.qty ?? 1);
@@ -47,7 +51,7 @@ export async function onRequestPost({ request, env }) {
   if (!Number.isInteger(qty) || qty < 1 || qty > MAX_STARTUPS) return json({ error: `You can book 1 to ${MAX_STARTUPS} startups at a time.` }, 400);
   const total = PRICE_INR * qty;
   const receipt = "sc_" + rand(8);
-  const notes = { consent: "privacy+terms accepted", product: "startup_coach", variation: `startups_${qty}`, plan: `startups_${qty}`, site: SITE, stream: "sales", title: "Startup coaching program (12 steps)", brand: "Rajat Agarwal, Startup Coach", startup, name, email, mobile: "+91" + digits, startups: String(qty), per_startup_inr: String(PRICE_INR) };
+  const notes = { consent: `K7|${TERMS_VERSION}|A|${await sha16(K7_A)}|${new Date().toISOString()}`, product: "startup_coach", variation: `startups_${qty}`, plan: `startups_${qty}`, site: SITE, stream: "sales", title: "Startup coaching program (12 steps)", brand: "Rajat Agarwal, Startup Coach", startup, name, email, mobile: "+91" + digits, startups: String(qty), per_startup_inr: String(PRICE_INR) };
   let order = await centralOrder(env, { plan: `startups_${qty}`, amount: total * 100, receipt, email, phone: "+91" + digits, notes: { ...notes, product: undefined, variation: undefined } });
   try {
     if (!order) { const r = await fetch((env.RAZORPAY_BASE_URL || "https://api.razorpay.com") + "/v1/orders", {
