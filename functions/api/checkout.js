@@ -36,6 +36,7 @@ export async function onRequestPost({ request, env }) {
   let b; try { b = JSON.parse(raw); } catch { return json({ error: "Bad request." }, 400); }
   if (!b || typeof b !== "object") return json({ error: "Bad request." }, 400);
   if (b.website) return json({ error: "Not allowed." }, 400); // honeypot: real people never fill this field
+  if (b.consent !== true) return json({ error: "Please accept the privacy notice and the programme terms." }, 400);
   const name = clean(b.name, 80), startup = clean(b.startup, 100), email = clean(b.email, 120).toLowerCase();
   const digits = String(b.phone ?? "").replace(/\D/g, "").replace(/^(91|0)+(?=\d{10}$)/, "");
   const qty = Number(b.qty ?? 1);
@@ -46,7 +47,7 @@ export async function onRequestPost({ request, env }) {
   if (!Number.isInteger(qty) || qty < 1 || qty > MAX_STARTUPS) return json({ error: `You can book 1 to ${MAX_STARTUPS} startups at a time.` }, 400);
   const total = PRICE_INR * qty;
   const receipt = "sc_" + rand(8);
-  const notes = { product: "startup_coach", variation: `startups_${qty}`, plan: `startups_${qty}`, site: SITE, stream: "sales", title: "Startup coaching program (12 steps)", brand: "Rajat Agarwal, Startup Coach", startup, name, email, mobile: "+91" + digits, startups: String(qty), per_startup_inr: String(PRICE_INR) };
+  const notes = { consent: "privacy+terms accepted", product: "startup_coach", variation: `startups_${qty}`, plan: `startups_${qty}`, site: SITE, stream: "sales", title: "Startup coaching program (12 steps)", brand: "Rajat Agarwal, Startup Coach", startup, name, email, mobile: "+91" + digits, startups: String(qty), per_startup_inr: String(PRICE_INR) };
   let order = await centralOrder(env, { plan: `startups_${qty}`, amount: total * 100, receipt, email, phone: "+91" + digits, notes: { ...notes, product: undefined, variation: undefined } });
   try {
     if (!order) { const r = await fetch((env.RAZORPAY_BASE_URL || "https://api.razorpay.com") + "/v1/orders", {

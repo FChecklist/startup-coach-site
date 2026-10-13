@@ -5,10 +5,10 @@ import { onRequestPost as checkout } from "../functions/api/checkout.js";
 import { onRequestPost as verify } from "../functions/api/verify.js";
 
 const SECRET = "test_secret_value";
-const env = { RAZORPAY_KEY_ID: "rzp_test_abc123", RAZORPAY_KEY_SECRET: SECRET, RESEND_API_KEY: "re_test", OWNER_EMAIL: "owner@example.com" };
+const env = { RAZORPAY_KEY_ID: "rzp_test_abc123", RAZORPAY_KEY_SECRET: SECRET, RESEND_API_KEY: "re_test", OWNER_EMAIL: "owner@example.com", ACCESS_SECRET: "shared-secret-xyz", APP_URL: "https://app.example" };
 const ORIGIN = "https://coach.example";
 const req = (path, body, headers = {}) => new Request(ORIGIN + path, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, ...headers }, body: typeof body === "string" ? body : JSON.stringify(body) });
-const good = { name: "Asha Rao", startup: "FreshCart", email: "Asha@Example.com", phone: "+91 98765 43210", qty: 1 };
+const good = { name: "Asha Rao", startup: "FreshCart", email: "Asha@Example.com", phone: "+91 98765 43210", qty: 1, consent: true };
 const sig = (o, p) => createHmac("sha256", SECRET).update(`${o}|${p}`).digest("hex");
 
 let orders, payments, sent, calls;
@@ -148,5 +148,37 @@ describe("central payments (orders open through IT Services by Rajat Agarwal)", 
     expect(r.status).toBe(200);
     expect(central.verifies).toHaveLength(1);
     expect(central.verifies[0]).toMatchObject({ key: "psk_coach", site: "rajat-agarwal-startup-coach.pages.dev", razorpay_order_id: oid, razorpay_payment_id: pid });
+  });
+});
+
+
+describe("access link (the key to the Proof Forge app)", () => {
+  async function paid(extra = {}) {
+    const c = await (await checkout({ request: req("/api/checkout", { ...good, ...extra }), env })).json();
+    const orderId = c.razorpay.orderId; const payId = "pay_ACCESS" + Math.random().toString(36).slice(2, 8);
+    payments[payId] = { id: payId, order_id: orderId, amount: orders[orderId].amount, currency: "INR", status: "captured" };
+    return { orderId, payId, res: await verify({ request: req("/api/verify", { razorpay_order_id: orderId, razorpay_payment_id: payId, razorpay_signature: sig(orderId, payId) }), env }) };
+  }
+  test("checkout refuses a booking without consent to the privacy notice", async () => {
+    const r = await checkout({ request: req("/api/checkout", { ...good, consent: false }), env }); expect(r.status).toBe(400);
+  });
+  test("a verified payment returns a link whose token the app can open, and e-mails it", async () => {
+    const { payId, res } = await paid({ qty: 2 }); const j = await res.json();
+    expect(j.accessLink.startsWith("https://app.example/#access=")).toBe(true);
+    const { openToken } = await import("../../proof-forge/functions/api/_access.js");
+    const tok = await openToken("shared-secret-xyz", j.accessLink.split("#access=")[1]);
+    expect(tok.p).toBe(payId); expect(tok.q).toBe(2); expect(tok.e).toBe("asha@example.com"); expect(tok.s).toBe("FreshCart");
+    const buyer = sent.find((m) => m.to[0] === "asha@example.com"); expect(buyer.text).toContain(j.accessLink); expect(buyer.text).toContain("Rs 9,999");
+    expect(buyer.subject).toContain("private Proof Forge link");
+  });
+  test("a token made with a different secret is useless to the app", async () => {
+    const { res } = await paid(); const j = await res.json();
+    const { openToken } = await import("../../proof-forge/functions/api/_access.js");
+    expect(await openToken("wrong-secret", j.accessLink.split("#access=")[1])).toBe(null);
+  });
+  test("without ACCESS_SECRET the buyer is still told, and no link is invented", async () => {
+    const saved = env.ACCESS_SECRET; delete env.ACCESS_SECRET;
+    try { const { res } = await paid(); const j = await res.json(); expect(j.accessLink).toBe(null); expect(sent.find((m) => m.to[0] === "asha@example.com").text).toContain("will be e-mailed to you shortly"); }
+    finally { env.ACCESS_SECRET = saved; }
   });
 });

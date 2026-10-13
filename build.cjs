@@ -3,7 +3,8 @@ const fs = require("fs"), path = require("path");
 const React = require("react"), RDS = require("react-dom/server"), fa = require("react-icons/fa6");
 const SITE = process.env.SITE_URL || "https://rajat-agarwal-startup-coach.pages.dev";
 const ITS = "https://itservices-rajat-agarwal.pages.dev"; // the website registered with Razorpay: it runs the payment window and holds the policies
-const CFG = { SITE, ITS, PHONE_DISPLAY: "(+91) 96503 97480" };
+const APP = process.env.APP_URL || "https://proof-forge.pages.dev"; // the Proof Forge app (free Cloudflare Pages)
+const CFG = { SITE, ITS, APP, PHONE_DISPLAY: "(+91) 96503 97480" };
 const root = __dirname, dist = path.join(root, "dist");
 fs.rmSync(dist, { recursive: true, force: true }); fs.mkdirSync(path.join(dist, "assets"), { recursive: true });
 let html = fs.readFileSync(path.join(root, "src/index.html"), "utf8");
