@@ -5,6 +5,7 @@
   var PRICE = 19999;
   var $ = function (id) { return document.getElementById(id); };
   var form = $("pay"); if (!form) return;
+  var opened = Date.now(); // the server checks that the form was open for a believable time (bot check)
   var money = function (n) { return "₹" + Number(n).toLocaleString("en-IN"); };
   var msg = $("msg"), go = $("go");
   function show(t) { msg.textContent = t; msg.hidden = !t; }
@@ -48,8 +49,8 @@
   }
   form.addEventListener("submit", async function (e) {
     e.preventDefault(); show("");
-    var f = new FormData(form), body = { name: f.get("name"), startup: f.get("startup"), email: f.get("email"), phone: f.get("phone"), qty: Number(f.get("qty")), website: f.get("website"), consent: f.get("consent") ? { v: "2026-10-13", boxes: ["A"] } : null };
-    if (!body.consent) return show("Please tick the box to continue.");
+    var f = new FormData(form), body = { name: f.get("name"), startup: f.get("startup"), email: f.get("email"), phone: f.get("phone"), qty: Number(f.get("qty")), website: f.get("website"), t: Date.now() - opened, consent: (f.get("consent_a") && f.get("consent_b") && f.get("consent_c")) ? { v: "2026-10-14", boxes: ["A", "B", "C"] } : null };
+    if (!body.consent) return show("Please tick all three boxes to continue.");
     if (String(body.name).trim().length < 2) return show("Please enter your name.");
     if (String(body.startup).trim().length < 2) return show("Please enter your startup's name.");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(body.email).trim())) return show("Please enter a valid e-mail address.");
@@ -63,6 +64,8 @@
       var res = await confirmPayment(resp);
       form.hidden = true; var done = $("done"); done.hidden = false;
       $("done-text").textContent = "Thank you, " + res.name + ". " + res.startups + (res.startups > 1 ? " seats" : " seat") + " for " + res.startup + ", " + money(res.total) + ". Razorpay payment ID: " + res.paymentId + ".";
+      var dc = $("done-consent"), labels = form.querySelectorAll(".consent label.chk");
+      if (dc && labels.length) { var ol = document.createElement("ol"); labels.forEach(function (l) { var li = document.createElement("li"); li.textContent = l.textContent.replace(/\s+/g, " ").trim(); ol.appendChild(li); }); dc.textContent = ""; var h = document.createElement("b"); h.textContent = "What you accepted (version 2026-10-14):"; dc.appendChild(h); dc.appendChild(ol); dc.hidden = false; dc.className = "acc small"; }
       if (res.accessLink) { var a = $("done-link"); a.href = res.accessLink; a.hidden = false; }
       done.focus();
     } catch (err) {

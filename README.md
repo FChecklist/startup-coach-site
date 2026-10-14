@@ -19,10 +19,16 @@ Spec: `PAYMENT_LEDGER_ABC_SPEC_2026-10-13.md` in the compliance-tracker repo. Co
 
 ## Build / test / deploy
     set NODE_PATH=C:\ct\ct\node_modules;C:\ct\ppt-work\node_modules   (react, react-dom, react-icons)
-    node build.cjs                       # writes dist/
+    node build.cjs                       # writes dist/ (needs python on the path: it applies the uniform footer, tools/ufooter.py)
+    node tools/check-site.mjs dist --its C:\ct\itservices-site\dist   # pages, links, SEO, sitemap, manifest, no very dark colours
     bun test                             # payment, consent and ledger tests; Razorpay, the central service and Resend replaced by a stand-in
     node C:\ct\tools\wrangler3\node_modules\wrangler\bin\wrangler.js pages deploy dist --project-name rajat-agarwal-startup-coach --branch main --commit-dirty=true
 (wrangler needs CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN from the user environment.)
 
 ## Contact details used
 Phone (+91) 96503 97480, e-mail rajatsiroffice@gmail.com (the same as on the IT Services site).
+
+## Look, install and footer (14 Oct 2026)
+- Bright palette only (saffron, teal, sky blue, cream); `tools/check-site.mjs` fails the build on a very dark background.
+- Installable app: `static/` holds the manifest, icons (192, 512, maskable), `og.png` (1200x630), `sw.js` (offline page + pages already opened) and `pwa.js`; made by `games-ops/sitegfx.py`.
+- Every page ends with the same footer block (`tools/ufooter.py COA dist`, run at the end of `build.cjs`); its Pricing link is `/pricing.html` (built from `legal/pricing.frag.html`), its "Test a payment (Rs 1)" button opens the central page with `?from=COA`.

@@ -11,7 +11,7 @@ import { onRequestPost as webhook } from "../functions/api/webhook.js";
 import { makeD1 } from "./d1-sqlite.js";
 
 const SECRET = "test_secret_value", WHSEC = "whsec_test_value", ORIGIN = "https://coach.example", OWNER_MAIL = "owner@example.com";
-const good = { name: "Asha Rao", startup: "FreshCart", email: "Asha@Example.com", phone: "+91 98765 43210", qty: 1, consent: { v: "2026-10-13", boxes: ["A"] } };
+const good = { name: "Asha Rao", startup: "FreshCart", email: "Asha@Example.com", phone: "+91 98765 43210", qty: 1, consent: { v: "2026-10-14", boxes: ["A", "B", "C"] }, t: 5000 };
 const req = (path, body) => new Request(ORIGIN + path, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN }, body: JSON.stringify(body) });
 const sig = (o, p) => createHmac("sha256", SECRET).update(`${o}|${p}`).digest("hex");
 
@@ -19,7 +19,7 @@ let env, raw, orders, payments, resend, mode;
 const realFetch = globalThis.fetch;
 beforeEach(() => {
   const d = makeD1(); raw = d.raw; orders = {}; payments = {}; resend = []; mode = "ok";
-  env = { DB: d.db, RAZORPAY_KEY_ID: "rzp_test_abc123", RAZORPAY_KEY_SECRET: SECRET, RAZORPAY_WEBHOOK_SECRET: WHSEC, RESEND_API_KEY: "re_test", OWNER_EMAIL: OWNER_MAIL, ACCESS_SECRET: "shared-secret-xyz", APP_URL: "https://app.example" };
+  env = { RATE_PER_VISITOR: "1000", RATE_PER_EMAIL: "1000", DB: d.db, RAZORPAY_KEY_ID: "rzp_test_abc123", RAZORPAY_KEY_SECRET: SECRET, RAZORPAY_WEBHOOK_SECRET: WHSEC, RESEND_API_KEY: "re_test", OWNER_EMAIL: OWNER_MAIL, ACCESS_SECRET: "shared-secret-xyz", APP_URL: "https://app.example" };
   globalThis.fetch = async (url, init = {}) => {
     const u = String(url);
     if (u.endsWith("/v1/orders") && init.method === "POST") { const b = JSON.parse(init.body); const id = "order_TEST" + Object.keys(orders).length + "abcdef"; orders[id] = { id, ...b }; return Response.json(orders[id]); }

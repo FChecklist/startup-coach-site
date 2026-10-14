@@ -3,11 +3,10 @@
 // then sends the signed result to /api/verify. The booking is written to this website's own ledger (C, see _ledgerc.js) the moment the buyer starts paying,
 // with its txn_id (COA-<payment id>); the same txn_id travels in the Razorpay order notes (A) and the central ledger (B).
 import { later, openPayment, attachOrder, voidPayment, pushSummaries, txnIdOf } from "./_ledgerc.js";
+import { CONSENT_VERSION, consentOk, bundleHash, recordConsent } from "./_consent.js";
+import { humanTime, overLimit } from "./_limit.js";
 const PRICE_INR = 19999; // per startup, GST not charged (IT Services by Rajat Agarwal is not GST registered)
 const MAX_STARTUPS = 5;
-const TERMS_VERSION = "2026-10-13";
-const K7_A = "I agree to the Terms, the Privacy Policy and the Refund Policy linked here. I understand there is no promise of funding or results."; // the exact wording of the box the buyer ticked (CONSENT K7, box A)
-const sha16 = async (s) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))), (x) => x.toString(16).padStart(2, "0")).join("").slice(0, 16);
 const HOP_URL = "https://itservices-rajat-agarwal.pages.dev/payframe/";
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
 const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -42,8 +41,9 @@ export async function onRequestPost(ctx) {
   let b; try { b = JSON.parse(raw); } catch { return json({ error: "Bad request." }, 400); }
   if (!b || typeof b !== "object") return json({ error: "Bad request." }, 400);
   if (b.website) return json({ error: "Not allowed." }, 400); // honeypot: real people never fill this field
-  const cs = b.consent; // the box must be ticked AND the request must carry the current version of the Terms
-  if (!cs || typeof cs !== "object" || cs.v !== TERMS_VERSION || !Array.isArray(cs.boxes) || !cs.boxes.includes("A")) return json({ error: "Please tick the box to continue.", code: "consent-required", kind: "K7", version: TERMS_VERSION }, 400);
+  if (!humanTime(b.t)) return json({ error: "Please take a moment to fill in the form, then try again.", code: "too-fast" }, 400); // bot check: the page reports how long it was open
+  const cs = b.consent; // all three boxes must be ticked AND the request must carry the current version of the words
+  if (!consentOk(cs)) return json({ error: "Please tick all three boxes to continue.", code: "consent-required", kind: "K7", version: CONSENT_VERSION }, 400);
   const name = clean(b.name, 80), startup = clean(b.startup, 100), email = clean(b.email, 120).toLowerCase();
   const digits = String(b.phone ?? "").replace(/\D/g, "").replace(/^(91|0)+(?=\d{10}$)/, "");
   const qty = Number(b.qty ?? 1);
@@ -52,15 +52,18 @@ export async function onRequestPost(ctx) {
   if (!EMAIL.test(email)) return json({ error: "Please enter a valid e-mail address." }, 400);
   if (!/^[6-9]\d{9}$/.test(digits)) return json({ error: "Please enter a valid 10-digit Indian mobile number." }, 400);
   if (!Number.isInteger(qty) || qty < 1 || qty > MAX_STARTUPS) return json({ error: `You can book 1 to ${MAX_STARTUPS} startups at a time.` }, 400);
+  const lim = await overLimit(env, request, email, Date.now());
+  if (lim.over) return json({ error: "Too many booking attempts just now. Please wait a little while, or call +91 96503 97480 to book.", code: "slow-down" }, 429);
   const total = PRICE_INR * qty;
   const payId = "sc_" + rand(8), receipt = payId, txn = txnIdOf(payId), now = Date.now(), plan = `startups_${qty}`;
   // Razorpay allows 15 notes in all. Through the central service it adds site, stream, product, plan, variation, payment_ref and txn_id (7) and keeps only the first
   // 9 of ours, so the buyer's details come first; the title and the unit price are the two it can lose.
-  const buyer = { consent: `K7|${TERMS_VERSION}|A|${await sha16(K7_A)}|${new Date().toISOString()}`, startup, startups: String(qty), name, email, mobile: "+91" + digits, brand: "Rajat Agarwal, Startup Coach" };
+  const buyer = { consent: `K7|${CONSENT_VERSION}|ABC|${await bundleHash()}|${new Date().toISOString()}`, startup, startups: String(qty), name, email, mobile: "+91" + digits, brand: "Rajat Agarwal, Startup Coach" };
   const extra = { ...buyer, title: "Startup coaching program (12 steps)", per_startup_inr: String(PRICE_INR) };
   const notes = { product: "startup_coach", variation: plan, plan, site: SITE, stream: "sales", payment_ref: payId, txn_id: txn, ...buyer };
   const db = env.DB; let ledger = false;
-  if (db) { try { await openPayment(db, { id: payId, amountMinor: total * 100, startups: qty, org: startup, name, email, phone: "+91" + digits }, now); ledger = true; } catch { /* the buyer is never stopped by the ledger */ } }
+  if (db) { try { await openPayment(db, { id: payId, amountMinor: total * 100, startups: qty, org: startup, name, email, phone: "+91" + digits }, now); ledger = true; } catch { /* the buyer is never stopped by the ledger */ }
+    if (ledger) { try { await recordConsent(db, payId, now); } catch { /* the proof is also in the Razorpay order notes */ } } }
   let order = await centralOrder(env, { plan, amount: total * 100, receipt, email, phone: "+91" + digits, notes: extra });
   try {
     if (!order) { const r = await fetch((env.RAZORPAY_BASE_URL || "https://api.razorpay.com") + "/v1/orders", {

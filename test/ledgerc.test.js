@@ -11,7 +11,7 @@ import { makeD1 } from "./d1-sqlite.js";
 
 const SECRET = "test_secret_value", WHSEC = "whsec_test_value", OWNER = "owner-key-for-tests-0123456789abcdef";
 const ORIGIN = "https://coach.example";
-const good = { name: "Asha Rao", startup: "FreshCart", email: "Asha@Example.com", phone: "+91 98765 43210", qty: 1, consent: { v: "2026-10-13", boxes: ["A"] } };
+const good = { name: "Asha Rao", startup: "FreshCart", email: "Asha@Example.com", phone: "+91 98765 43210", qty: 1, consent: { v: "2026-10-14", boxes: ["A", "B", "C"] }, t: 5000 };
 const req = (path, body, headers = {}) => new Request(ORIGIN + path, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, ...headers }, body: typeof body === "string" ? body : JSON.stringify(body) });
 const sig = (o, p) => createHmac("sha256", SECRET).update(`${o}|${p}`).digest("hex");
 const whsig = (raw, secret = WHSEC) => createHmac("sha256", secret).update(raw).digest("hex");
