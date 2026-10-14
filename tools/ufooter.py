@@ -22,6 +22,7 @@ GAMES = [
 ]
 ITS = "https://itservices-rajat-agarwal.pages.dev"
 APP = "https://app.veridian-aios.com"
+APEX = "https://veridian-aios.com/"  # the DPDP product's public home; its own site links here, not to the legacy app host
 COACH = "https://rajat-agarwal-startup-coach.pages.dev"
 IDX = "https://corporate-games.pages.dev"
 
@@ -38,7 +39,7 @@ SITES = {
     "BNG": dict(name="Corporate Bingo", tag="Team bingo for remote and hybrid teams.", links=_game_links()),
     "TTT": dict(name="Corporate Tic Tac Toe", tag="Tournaments for remote and hybrid teams.", links=_game_links()),
     "SNL": dict(name="Corporate Snakes and Ladders", tag="A board game for teams.", links=_game_links()),
-    "LBC": dict(name="Corporate Luck by Chance", tag="A dice game for teams.", links=_game_links()),
+    "LBC": dict(name="Corporate Luck by Chance", tag="A dice game for teams.", links={**_game_links(), "Brochure": "/brochure.html", "Privacy": "/privacy.html"}),  # LBC ships brochure.html (pages/build.mjs; there is no brochure.pdf) and has a stand-alone privacy notice, privacy.html
     "IDX": dict(name="Corporate Games", tag="Close group, online engagement.", links={
         "Home": "/", "Pricing": "/pricing.html", "How it works": "/how-it-works.html", "The games": "/games.html",
         "Terms": "/terms.html", "Privacy": "/privacy.html", "Sub-processors": "/subprocessors.html", "Refund policy": "/refund-policy.html",
@@ -55,8 +56,8 @@ SITES = {
         "About": "/about/", "Contact": "/contact/", "Grievance": "/contact/#grievance",
         "pay": "/paytest/?from=ITS"}),
     "DPD": dict(name="VERIDIAN", tag="DPDP compliance software for India.", links={
-        "Home": "/", "Pricing": "/pricing", "About": "/about", "Terms": "/terms", "Privacy": "/privacy",
-        "Disclaimer": "/disclaimer", "Refund policy": "/refund", "Delivery": "/delivery", "Contact": "/contact",
+        "Home": "/", "Pricing": "/pricing/", "Refer and earn": "/partner/", "About": "/about/", "Terms": "/terms/", "Privacy": "/privacy/",
+        "Sub-processors": "/subprocessors/", "Disclaimer": "/disclaimer/", "Refund policy": "/refund/", "Delivery": "/shipping/", "Contact": "/contact/",
         "pay": ITS + "/paytest/?from=DPD"}),
 }
 
@@ -65,7 +66,7 @@ CSS = (
     ".uf *{box-sizing:border-box}"
     ".uf .ufw{max-width:1100px;margin:0 auto;padding:28px 16px 20px}"
     ".uf .ufg{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:22px}"
-    ".uf h4{margin:0 0 8px;font:700 14px/1.3 Inter,system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:#C2410C}"
+    ".uf .uft{margin:0 0 8px;font:700 14px/1.3 Inter,system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:#C2410C}"
     ".uf p{margin:0 0 8px}"
     ".uf ul{list-style:none;margin:0;padding:0}"
     ".uf li{margin:0}"
@@ -91,15 +92,15 @@ def render(site):
     here = lambda k: L.get(k)
     def col(title, keys):
         items = "".join(_a(k, L[k]) for k in keys if k in L)
-        return f"<div><h4>{title}</h4><ul>{items}</ul></div>"
+        return f'<div><p class="uft">{title}</p><ul>{items}</ul></div>'
     explore_keys = [k for k in ("Home", "Pricing", "How it works", "The games", "Demo", "Brochure", "For organizers", "Organizer guide", "Refer and earn") if k in L]
     legal_keys = [k for k in ("Terms", "Legal position", "Privacy", "Sub-processors", "Refund policy", "Shipping and delivery", "Delivery", "Disclaimer", "Data processing") if k in L]
     help_keys = [k for k in ("About", "Contact", "Contact and grievance", "Grievance") if k in L]
     brand = (f'<div><p class="ufb">{s["name"]}</p><p>{s["tag"]}</p><p>A product of {SELLER}.</p>'
              f'<p><a href="mailto:{EMAIL}">{EMAIL}</a><br><a href="tel:{PHONE_TEL}">{PHONE_TXT}</a></p></div>')
-    pay = f'<div class="ufpay"><h4>Payments</h4><p>Safe online payment through Razorpay.</p><a href="{L["pay"]}">Test a payment (Rs 1)</a></div>'
+    pay = f'<div class="ufpay"><p class="uft">Payments</p><p>Safe online payment through Razorpay.</p><a href="{L["pay"]}">Test a payment (Rs 1)</a></div>'
     games = "".join(f'<a href="{u}">{n.replace("Corporate ", "")}</a>' for n, u in GAMES)
-    other = (f'<a href="{IDX}">All games</a>' + games + f'<a href="{COACH}">Startup Coach</a><a href="{APP}">Veridian DPDP</a>')
+    other = (f'<a href="{IDX}">All games</a>' + games + f'<a href="{COACH}">Startup Coach</a><a href="{APEX if site == "DPD" else APP}">Veridian DPDP</a>')
     legal = (f'<p>{SELLER} is the trade name of Rajat Agarwal, an individual running a sole proprietorship in India. {ADDR}. '
              f'GST is not charged. Payments are collected by {SELLER}.</p>'
              f'<p>&copy; 2026 Rajat Agarwal. All rights reserved.</p>')
