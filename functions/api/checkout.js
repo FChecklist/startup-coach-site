@@ -59,7 +59,7 @@ export async function onRequestPost(ctx) {
   // Razorpay allows 15 notes in all. Through the central service it adds site, stream, product, plan, variation, payment_ref and txn_id (7) and keeps only the first
   // 9 of ours, so the buyer's details come first; the title and the unit price are the two it can lose.
   const buyer = { consent: `K7|${CONSENT_VERSION}|ABC|${await bundleHash()}|${new Date().toISOString()}`, startup, startups: String(qty), name, email, mobile: "+91" + digits, brand: "Rajat Agarwal, Startup Coach" };
-  const extra = { ...buyer, title: "Startup coaching program (12 steps)", per_startup_inr: String(PRICE_INR) };
+  const extra = { ...buyer, title: "Startup coaching programme (12 steps)", per_startup_inr: String(PRICE_INR) };
   const notes = { product: "startup_coach", variation: plan, plan, site: SITE, stream: "sales", payment_ref: payId, txn_id: txn, ...buyer };
   const db = env.DB; let ledger = false;
   if (db) { try { await openPayment(db, { id: payId, amountMinor: total * 100, startups: qty, org: startup, name, email, phone: "+91" + digits }, now); ledger = true; } catch { /* the buyer is never stopped by the ledger */ }
@@ -83,7 +83,7 @@ export async function onRequestPost(ctx) {
     hop: env.HOP_URL || HOP_URL,
     razorpay: {
       keyId: env.RAZORPAY_KEY_ID, orderId: order.id, amount: total * 100, currency: "INR",
-      name: "Rajat Agarwal, Startup Coach", description: "Startup coaching program | IT Services by Rajat Agarwal",
+      name: "Rajat Agarwal, Startup Coach", description: "Startup coaching programme | IT Services by Rajat Agarwal",
       prefill: { name, email, contact: "+91" + digits }, notes: { startup, startups: String(qty) }, theme: { color: "#F5820A" }, config: UPI_FIRST,
     },
     total, txnId: txn,
