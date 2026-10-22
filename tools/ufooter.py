@@ -101,7 +101,7 @@ def render(site):
     pay = f'<div class="ufpay"><p class="uft">Payments</p><p>Safe online payment through Razorpay.</p><a href="{L["pay"]}">Test a payment (Rs 1)</a></div>'
     games = "".join(f'<a href="{u}">{n.replace("Corporate ", "")}</a>' for n, u in GAMES)
     other = (f'<a href="{IDX}">All games</a>' + games + f'<a href="{COACH}">Startup Coach</a><a href="{APEX if site == "DPD" else APP}">Veridian DPDP</a>')
-    legal = (f'<p>{SELLER} is the trade name of Rajat Agarwal, an individual running a sole proprietorship in India. {ADDR}. '
+    legal = (f'<p><a href="https://itservices-rajat-agarwal.pages.dev" target="_blank" rel="noopener">{SELLER}</a> is the trade name of Rajat Agarwal, an individual running a sole proprietorship in India. {ADDR}. '
              f'GST is not charged. Payments are collected by {SELLER}.</p>'
              f'<p>&copy; 2026 Rajat Agarwal. All rights reserved.</p>')
     return _build(brand, col, explore_keys, legal_keys, help_keys, pay, other, legal)
