@@ -45,7 +45,7 @@ try {
   t("E05", "installable: manifest, icons, service worker", mf.name && mf.start_url && icons.every((s) => s === 200) && (await page.request.get(base + "/sw.js")).status() === 200, JSON.stringify(icons));
   // E06 form validation messages
   const msg = page.locator("#msg");
-  await page.click("#go"); t("E06a", "all three boxes required", /tick all three/i.test(await msg.innerText()));
+  await page.click("#go"); t("E06a", "all three boxes required", /tick the three boxes/i.test(await msg.innerText()));
   for (const b of ["a", "b", "c"]) await page.check("#f-consent-" + b);
   await page.click("#go"); t("E06b", "name required", /name/i.test(await msg.innerText()));
   await page.fill("#f-name", "Test Founder"); await page.click("#go"); t("E06c", "startup name required", /startup/i.test(await msg.innerText()));
@@ -79,5 +79,23 @@ try {
   await page.keyboard.press("Tab"); t("E13", "skip link is the first tab stop", await page.evaluate(() => document.activeElement.className === "skip"));
   // E14 logo present
   t("E14", "logo loads", await page.evaluate(() => { const i = document.querySelector(".brand img"); return i.complete && i.naturalWidth > 0; }));
+  // E15 guided errors: a mistake gets a polite title, steps, the exact box outlined and focused; a dropped connection and a service failure explain themselves
+  await page.unroute("**/api/checkout"); await page.goto(base + "/");
+  const gm = page.locator("#msg");
+  await page.click("#go");
+  t("E15a", "no boxes ticked: a title, steps and the box focused", /Please tick the three boxes/.test(await gm.innerText()) && (await gm.locator("ol li").count()) >= 2 && await page.evaluate(() => /consent/.test(document.activeElement.id || document.activeElement.name || "")), await gm.innerText());
+  for (const k of ["a", "b", "c"]) await page.check("#f-consent-" + k);
+  await page.fill("#f-name", "Test Founder"); await page.fill("#f-startup", "Test Startup"); await page.fill("#f-email", "bad"); await page.fill("#f-phone", "9650397480");
+  await page.click("#go");
+  t("E15b", "bad e-mail: the e-mail box is outlined and focused, steps shown, no technical words", await page.evaluate(() => document.activeElement.id === "f-email") && /Please check your e-mail/.test(await gm.innerText()) && !/undefined|TypeError|Failed to fetch|http \d/.test(await gm.innerText()));
+  await page.fill("#f-email", "t@example.com");
+  t("E15c", "the outline goes away once the box is fixed", await page.evaluate(() => document.getElementById("f-email").style.outline === ""));
+  await page.route("**/api/checkout", (r) => r.abort("internetdisconnected"));
+  await page.click("#go"); await page.waitForTimeout(800);
+  t("E15d", "internet down: a calm explanation, nothing about 'fetch', the button works again, the typing is kept", /could not reach the service/i.test(await gm.innerText()) && !/Failed to fetch/.test(await gm.innerText()) && !(await page.locator("#go").isDisabled()) && (await page.inputValue("#f-name")) === "Test Founder");
+  await page.unroute("**/api/checkout");
+  await page.route("**/api/checkout", (r) => r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "The payment service could not start your payment. Please try again, or call +91 96503 97480." }) }));
+  await page.click("#go"); await page.waitForTimeout(800);
+  t("E15e", "service failure: says it is not the person's doing and nothing was charged, with a phone number", /not your doing/i.test(await gm.innerText()) && /96503 97480/.test(await gm.innerText()));
 } finally { await browser.close(); srv.close(); }
 const failed = out.filter((x) => !x.ok); console.log(`\n${out.length - failed.length}/${out.length} passed`); process.exit(failed.length ? 1 : 0);
