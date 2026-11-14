@@ -32,3 +32,6 @@ Phone (+91) 96503 97480, e-mail rajatsiroffice@gmail.com (the same as on the IT 
 - Bright palette only (saffron, teal, sky blue, cream); `tools/check-site.mjs` fails the build on a very dark background.
 - Installable app: `static/` holds the manifest, icons (192, 512, maskable), `og.png` (1200x630), `sw.js` (offline page + pages already opened) and `pwa.js`; made by `games-ops/sitegfx.py`.
 - Every page ends with the same footer block (`tools/ufooter.py COA dist`, run at the end of `build.cjs`); its Pricing link is `/pricing.html` (built from `legal/pricing.frag.html`), its "Test a payment (Rs 1)" button opens the central page with `?from=COA`.
+
+
+See [KNOWLEDGE-MAP.md](KNOWLEDGE-MAP.md) for what this repository is for and what the other repositories are for (updated 14 Nov 2026).
