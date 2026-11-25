@@ -35,3 +35,7 @@ Phone (+91) 96503 97480, e-mail rajatsiroffice@gmail.com (the same as on the IT 
 
 
 See [KNOWLEDGE-MAP.md](KNOWLEDGE-MAP.md) for what this repository is for and what the other repositories are for (updated 14 Nov 2026).
+
+## Version notes
+
+- 1.0.1 (25 Nov 2026): the small mark "१३९" at the very top centre of every page (owner order, approved 25 Nov 2026). Markup in `src/index.html` and the `shell` in `build.cjs`, CSS in `src/style.css`; guarded by `test/mark139.test.js`. This repo keeps no other version file.
