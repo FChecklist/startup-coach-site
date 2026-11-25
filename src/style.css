@@ -1,3 +1,5 @@
+.mark139{position:absolute;top:0;left:0;right:0;margin:0;padding:1px 0 0;text-align:center;line-height:1;pointer-events:none;user-select:none;z-index:2147483647;font-family:"Noto Sans Devanagari","Mukta","Nirmala UI","Mangal","Kohinoor Devanagari","Devanagari Sangam MN",sans-serif;font-size:6px;font-weight:700;color:#0B2A6B}
+.mark139 span{display:inline-block;border-bottom:.5px solid #7A1010;padding-bottom:.5px}
 @font-face{font-family:"DM Serif Display";src:url(/assets/dm-serif-display-latin.woff2) format("woff2");font-weight:400;font-display:swap}
 @font-face{font-family:"Inter";src:url(/assets/inter-latin.woff2) format("woff2");font-weight:100 900;font-display:swap}
 :root{--navy:#1F2A37;--navy2:#0A5F55;--cream:#FFF6E5;--saf:#F5820A;--saf-d:#B93C0A;--teal:#0E7C6E;--blue:#2F6FDE;--purple:#7A3FC6;--green:#1E8E3E;--red:#D92D20;--pale:#E4F3FF;--line:#F0D9AE;--ink:#0B1F3A;--mute:#3B4A5E;--white:#fff;--r:16px}
